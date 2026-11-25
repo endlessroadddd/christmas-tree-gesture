@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>手势圣诞树 · 视频风格</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; background: #090b0f; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+    body { display: grid; place-items: center; overflow: hidden; }
+    #stage { position: relative; width: min(100vw, 56.25vh); height: min(100vh, 177.7778vw); max-height: 100dvh; aspect-ratio: 9 / 16; overflow: hidden; background: #121419; box-shadow: 0 0 60px #000a; }
+    #cameraPane { position: absolute; inset: 0 0 66.67% 0; background: radial-gradient(circle at 50% 35%, #685447 0%, #342e2c 42%, #181a1e 100%); overflow: hidden; }
+    #cameraPane::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 88%, #111318); pointer-events: none; }
+    #webcam, #landmarks { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    #webcam { display: none; }
+    #landmarks { pointer-events: none; }
+    #cameraPrompt { position: absolute; left: 8%; right: 8%; bottom: 9%; text-align: center; color: #e8dfd0; line-height: 1.5; font-size: clamp(11px, 1.8vw, 14px); text-shadow: 0 1px 8px #000; }
+    #cameraPrompt strong { display: none; }
+    #treePane { position: absolute; inset: 33.33% 0 0; background: #121419; }
+    #treeCanvas { display: block; width: 100%; height: 100%; }
+    #hud { position: absolute; z-index: 4; top: 8px; left: 8px; right: 8px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+    #controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; pointer-events: auto; }
+    button { cursor: pointer; border: 1px solid #ffffff55; background: #15191dba; color: white; border-radius: 999px; padding: 5px 9px; font: 11px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; backdrop-filter: blur(8px); }
+    button:hover, button:focus-visible { background: #384344; outline: 1px solid #ccece4; }
+    button.active { border-color: #c1f4e2; background: #235343c9; }
+    .modeLink { text-decoration: none; display: inline-flex; align-items: center; border: 1px solid #d4c69a88; background: #15191dba; color: #f5e6bd; border-radius: 999px; padding: 5px 9px; font: 11px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; backdrop-filter: blur(8px); }
+    .modeLink:hover, .modeLink:focus-visible { background: #384344; outline: 1px solid #f5e6bd; }
+    #hudMeta { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+    #status { padding: 4px 8px; border-radius: 6px; background: #101417b8; color: #eee4cf; font-size: 11px; line-height: 1.35; max-width: 100%; }
+    #photoCount { padding: 4px 7px; border-radius: 6px; background: #1014179c; color: #eee4cf; font-size: 10px; white-space: nowrap; }
+    #photoManager { position: absolute; z-index: 8; inset: 7% 5%; display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #171b1ef2; border: 1px solid #d4c69a99; border-radius: 12px; box-shadow: 0 12px 35px #000b; }
+    #photoManager[hidden] { display: none; }
+    #photoManager header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    #photoManager h2 { margin: 0; color: #f1e8c9; font-size: 17px; }
+    #photoList { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-content: start; gap: 10px; }
+    .photoItem { min-width: 0; padding: 7px; background: #262d30; border: 1px solid #ffffff27; border-radius: 8px; }
+    .photoItem img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 4px; }
+    .photoItem p { margin: 7px 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; }
+    .photoActions { display: flex; gap: 5px; }
+    .photoActions button { flex: 1; padding: 6px 2px; font-size: 11px; }
+    .photoActions button.danger { border-color: #d58b8b; color: #ffd4d4; }
+    #photoEmpty { margin: 18px 0; color: #c9c2ad; font-size: 13px; }
+    @media (max-width: 600px) { #stage { width: 100vw; height: 100dvh; max-height: none; aspect-ratio: auto; } #cameraPane { bottom: 66.67%; } #treePane { top: 33.33%; } }
+  </style>
+</head>
+<body>
+  <main id="stage" aria-label="手势控制的点阵圣诞树">
+    <section id="cameraPane" aria-label="摄像头画面">
+      <video id="webcam" autoplay muted playsinline></video>
+      <canvas id="landmarks"></canvas>
+      <div id="cameraPrompt"><strong>手势圣诞树</strong>开启摄像头，显示实时手势画面</div>
+    </section>
+    <section id="treePane" aria-label="动态圣诞树"><canvas id="treeCanvas"></canvas></section>
+    <div id="hud">
+      <div id="controls"><button id="cameraButton" type="button">开启摄像头</button><button id="uploadButton" type="button">添加图片</button><button id="manageButton" type="button">管理图片</button><button id="demoClockwise" type="button">↻ 聚合</button><button id="demoCounterclockwise" type="button">↺ 消散</button><a class="modeLink" href="./video_style_embedded.html">树内嵌图版</a></div>
+      <div id="hudMeta">
+        <div id="status" role="status">演示模式 · 无需摄像头</div>
+        <div id="photoCount">已保存 0 张图片</div>
+      </div>
+    </div>
+    <input id="photoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+    <section id="photoManager" role="dialog" aria-modal="true" aria-labelledby="photoManagerTitle" hidden>
+      <header><h2 id="photoManagerTitle">管理已保存的图片</h2><button id="closeManagerButton" type="button">关闭</button></header>
+      <div id="photoList"></div>
+    </section>
+  </main>
+  <script src="./gesture_motion.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script>
+    'use strict';
+    const stage = document.getElementById('stage');
+    const treePane = document.getElementById('treePane');
+    const treeCanvas = document.getElementById('treeCanvas');
+    const ctx = treeCanvas.getContext('2d');
+    const cameraPane = document.getElementById('cameraPane');
+    const webcam = document.getElementById('webcam');
+    const landmarkCanvas = document.getElementById('landmarks');
+    const landmarkCtx = landmarkCanvas.getContext('2d');
+    const cameraButton = document.getElementById('cameraButton');
+    const uploadButton = document.getElementById('uploadButton');
+    const manageButton = document.getElementById('manageButton');
+    const photoInput = document.getElementById('photoInput');
+    const photoCount = document.getElementById('photoCount');
+    const photoManager = document.getElementById('photoManager');
+    const photoList = document.getElementById('photoList');
+    const closeManagerButton = document.getElementById('closeManagerButton');
+    const status = document.getElementById('status');
+    const prompt = document.getElementById('cameraPrompt');
+    let width = 720, height = 854, topWidth = 720, topHeight = 426;
+    let demo = true, stream = null, hands = null, sending = false, videoFrame = 0;
+    let lastHandsAt = 0, pinchAmount = 0, handX = .5, targetAssembly = 1;
+    let easedAssembly = 0, easedHandX = .5, lastDrawAt = 0;
+    let photos = [], photoDb = null, photoOpen = false, photoFocusAlpha = 0, focusedPhotoIndex = -1;
+    const circleTracker = new GestureMotion.FingerCircleTracker();
+    const pinchController = new GestureMotion.PinchGestureController();
+    const photoReveal = new GestureMotion.PhotoRevealController();
+    const startedAt = performance.now();
+    let stars = [], flakes = [], dots = [], baseDots = [], branchRings = [];
+    const bones = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+    function random(a,b) { return a + Math.random() * (b-a); }
+    function clamp(v,a=0,b=1) { return Math.max(a,Math.min(b,v)); }
+    const tierStops=[0,.17,.36,.57,.78,1];
+    function treeTier(t) {
+      let index=tierStops.length-2;
+      for(let i=0;i<tierStops.length-1;i++)if(t<tierStops[i+1]){index=i;break;}
+      return {index,phase:clamp((t-tierStops[index])/(tierStops[index+1]-tierStops[index]))};
+    }
+    function coneRadius(t,s) { return 7*s+width*.33*Math.pow(t,.88); }
+    function treeRadius(t,s) {
+      const {phase}=treeTier(t);
+      return coneRadius(t,s)*(.66+.34*Math.pow(phase,.56))*(1+.012*Math.sin(phase*13*Math.PI));
+    }
+    function resize() {
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      width = treePane.clientWidth; height = treePane.clientHeight;
+      topWidth = cameraPane.clientWidth; topHeight = cameraPane.clientHeight;
+      treeCanvas.width = Math.round(width*dpr); treeCanvas.height = Math.round(height*dpr);
+      landmarkCanvas.width = Math.round(topWidth*dpr); landmarkCanvas.height = Math.round(topHeight*dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0); landmarkCtx.setTransform(dpr,0,0,dpr,0,0);
+      buildScene();
+    }
+    function buildScene() {
+      const s = width/720;
+      const treeTop = height*.145, treeBottom = height*.735;
+      stars = Array.from({length: 105},()=>({x:random(0,width),y:random(0,height*.75),r:random(.35,1.2)*s,a:random(.08,.4),p:random(0,7)}));
+      flakes = Array.from({length: 55},()=>({x:random(0,width),y:random(0,height),r:random(.5,1.9)*s,v:random(.12,.42)*s,p:random(0,7)}));
+      dots = [];
+      baseDots = [];
+      branchRings = [];
+      for(let row=0;row<15;row++) {
+        const radius=.16+row*.057;
+        const count=75+row*15;
+        for(let i=0;i<count;i++) {
+          if(Math.random()<.22) continue;
+          baseDots.push({radius,angle:i/count*Math.PI*2,light:random(.35,.9),size:random(1.8,3.2)*s,phase:random(0,7)});
+        }
+      }
+      const rowStep = Math.max(3.9*s, 2.45), colStep = Math.max(4.35*s, 2.65);
+      for(let y=treeTop; y<treeBottom; y+=rowStep) {
+        const t=(y-treeTop)/(treeBottom-treeTop);
+        const {phase}=treeTier(t);
+        const tierLight=.58+.42*clamp((phase-.035)/.28);
+        const radius = treeRadius(t,s);
+        for(let x=colStep*.5; x<radius; x+=colStep) {
+          if(Math.random()<.07) continue;
+          const depth=Math.sqrt(Math.max(0,radius*radius-x*x));
+          const z=(Math.random()<.5?1:-1)*depth*random(.55,.96);
+          const jitter=random(-.5,.5)*s, rowJitter=random(-.5,.5)*s;
+          const seed=Math.random(), lit=random(.6,1);
+          for(const side of [-1,1]) {
+            const px=side*(x+jitter), pz=side*z;
+            const angle=Math.atan2(pz,px);
+            const garlandAngle=t*7.5*Math.PI+.7;
+            const angleGap=Math.atan2(Math.sin(angle-garlandAngle),Math.cos(angle-garlandAngle));
+            const ribbon=Math.abs(angleGap)<.25;
+            const ornament=Math.random()<.015 && t>.2;
+            dots.push({x:px,z:pz,y:y+rowJitter,radius,sx:random(0,width),sy:random(height*.13,height*.83),seed,t,lit,tierLight,ribbon,ornament,hue:(t*1020+angle*55+360)%360,phase:random(0,7),size:random(2.8,3.6)*s});
+          }
+        }
+      }
+      for(let tier=1;tier<tierStops.length;tier++){
+        const t=tierStops[tier]-.008, radius=coneRadius(t,s)*.98;
+        const count=80+tier*20;
+        for(let i=0;i<count/2;i++){
+          if(Math.random()<.12)continue;
+          const angle=i/count*Math.PI*2, light=random(.65,1);
+          for(const opposite of [0,Math.PI]){
+            const a=angle+opposite;
+            branchRings.push({x:Math.cos(a)*radius,z:Math.sin(a)*radius,y:treeTop+t*(treeBottom-treeTop),t,radius,light});
+          }
+        }
+      }
+    }
+    function glow(x,y,r,color,alpha=1) {
+      ctx.save(); ctx.globalAlpha=alpha; ctx.shadowColor=color; ctx.shadowBlur=r*3; ctx.fillStyle=color; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.restore();
+    }
+    function ring(cx,cy,rx,ry,phase,alpha=1) {
+      ctx.save(); ctx.strokeStyle=`rgba(233,224,190,${.63*alpha})`; ctx.lineWidth=Math.max(.7,width/720*1.3); ctx.setLineDash([2*width/720,4*width/720]);
+      ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); ctx.stroke();
+      for(let i=0;i<200;i++) { const a=i/200*Math.PI*2+phase; const x=cx+Math.cos(a)*rx,y=cy+Math.sin(a)*ry; if((i*13)%17<3) continue; const light=.42+.46*(.5+.5*Math.sin(i*1.7)); ctx.fillStyle=`rgba(242,229,184,${alpha*light})`; ctx.fillRect(x,y,Math.max(1.2,width/720*3),Math.max(1,width/720*1.7)); }
+      ctx.restore();
+    }
+    function floorLights(t,floor,rotation) {
+      const s=width/720;
+      for(const p of baseDots) {
+        const angle=p.angle+rotation;
+        const x=width*.5+Math.cos(angle)*p.radius*width*.71;
+        const y=floor+height*.105+Math.sin(angle)*p.radius*height*.16;
+        const near=.62+.38*Math.sin(angle);
+        const spoke=.65+.35*Math.pow(Math.max(0,Math.cos(p.angle*8)),8);
+        const flicker=.9+.1*Math.sin(t*.0012+p.phase);
+        ctx.fillStyle=`rgba(238,221,176,${p.light*near*spoke*flicker*.7})`;
+        ctx.fillRect(x,y,Math.max(1.3,p.size),Math.max(1,1.5*s));
+      }
+    }
+    function drawGarland(t,reveal,rotation) {
+      const s=width/720, top=height*.145, bottom=height*.735;
+      for(let i=0;i<420;i++) {
+        const h=i/419;
+        const layer=clamp((reveal-(1-h)*.92)/.08);
+        if(layer<.1 || i%9===0) continue;
+        const radius=coneRadius(h,s)*.96;
+        const y=top+h*(bottom-top);
+        for(const offset of [-.1,0,.1]) {
+          const angle=h*7.5*Math.PI+.7+rotation+offset;
+          const front=.28+.72*clamp((Math.sin(angle)+.3)/1.3);
+          ctx.fillStyle=`hsla(${(h*860+t*.01+offset*120)%360},100%,64%,${front*layer*.8})`;
+          const x=width*.5+Math.cos(angle)*radius;
+          ctx.fillRect(x,y,Math.max(1.5,3.3*s),Math.max(1.1,2.4*s));
+        }
+      }
+    }
+    function star(x,y,t) {
+      const s=width/720;
+      ctx.save(); ctx.globalCompositeOperation='lighter';
+      glow(x,y,3*s,'#fff3b0',.9); glow(x,y,7*s,'#e8d585',.25);
+      ctx.strokeStyle='#fff0af'; ctx.shadowColor='#ffec9f'; ctx.shadowBlur=14*s;
+      ctx.lineWidth=1.2*s; ctx.beginPath(); ctx.moveTo(x-30*s,y); ctx.lineTo(x+30*s,y); ctx.moveTo(x,y-37*s); ctx.lineTo(x,y+37*s); ctx.stroke();
+      for(let i=-4;i<=4;i++){ctx.fillStyle=`rgba(255,230,151,${.25+.55*(1-Math.abs(i)/5)})`;ctx.fillRect(x+i*7*s,y+Math.sin(t*.001+i)*1.5*s,3*s,2*s);}
+      ctx.restore();
+    }
+    function gift(x,y,color,scale=1) {
+      const s=width/720*scale;
+      ctx.save(); ctx.translate(x,y); ctx.shadowColor=color; ctx.shadowBlur=9*s;
+      ctx.fillStyle=color; ctx.globalAlpha=.68; ctx.fillRect(-22*s,-35*s,44*s,35*s); ctx.fillRect(-25*s,-39*s,50*s,7*s);
+      ctx.fillStyle='#eadba5'; ctx.fillRect(-2.5*s,-39*s,5*s,39*s); ctx.fillRect(-25*s,-22*s,50*s,4*s);
+      ctx.strokeStyle='#d7c69d'; ctx.lineWidth=2*s; ctx.beginPath(); ctx.ellipse(-8*s,-42*s,8*s,4*s,-.5,0,Math.PI*2); ctx.ellipse(8*s,-42*s,8*s,4*s,.5,0,Math.PI*2); ctx.stroke(); ctx.restore();
+    }
+    const deerSprite=new Image();
+    let deerReady=false;
+    deerSprite.onload=()=>{deerReady=true;};
+    deerSprite.src='./assets/reindeer_walk.png';
+    function deer(t,alpha) {
+      if(!deerReady)return;
+      const source={x:292,y:174,width:533,height:1003};
+      const spriteHeight=height*.17, spriteWidth=spriteHeight*source.width/source.height*1.07;
+      const scaleX=spriteWidth/source.width, scaleY=spriteHeight/source.height;
+      const x=(width-spriteWidth)/2, y=height*.40+Math.sin(t*.014)*width*.0012;
+      const gait=t*.0065, bend=Math.sin(gait)*.4;
+      const highStep=Math.max(0,Math.cos(gait))*2.5*width/440;
+      const lowStep=Math.max(0,-Math.cos(gait))*2.5*width/440;
+      const leg=(sx,sw,hipX,angle,opacity,lift)=>{
+        const pivotX=x+(hipX-source.x)*scaleX, pivotY=y+(900-source.y)*scaleY;
+        ctx.save();ctx.globalAlpha=alpha*opacity;ctx.translate(pivotX,pivotY);ctx.rotate(angle);
+        ctx.drawImage(deerSprite,sx,895,sw,282,x+(sx-source.x)*scaleX-pivotX,y+(895-source.y)*scaleY-pivotY-lift,sw*scaleX,282*scaleY);
+        ctx.restore();
+      };
+      ctx.save();ctx.shadowColor='#e6fff0';ctx.shadowBlur=4*width/720;
+      leg(292,108,355,-bend,.7,highStep);
+      leg(565,135,650,bend,.7,lowStep);
+      ctx.globalAlpha=alpha;
+      ctx.drawImage(deerSprite,source.x,source.y,source.width,741,x,y,spriteWidth,741*scaleY);
+      leg(400,165,450,bend,1,lowStep);
+      leg(700,125,740,-bend,1,highStep);
+      ctx.restore();
+    }
+    function drawCard(image,x,y,cardWidth,cardHeight,alpha,rotation=0) {
+      ctx.save(); ctx.globalAlpha=alpha; ctx.translate(x,y); ctx.rotate(rotation);
+      ctx.shadowColor='#f6dda8'; ctx.shadowBlur=10*width/720;
+      ctx.fillStyle='#e9d6a9'; ctx.fillRect(-cardWidth/2-3,-cardHeight/2-3,cardWidth+6,cardHeight+6);
+      ctx.shadowBlur=0; ctx.fillStyle='#151616'; ctx.fillRect(-cardWidth/2,-cardHeight/2,cardWidth,cardHeight);
+      const imageAspect=image.width/image.height, frameAspect=cardWidth/cardHeight;
+      let sx=0,sy=0,sw=image.width,sh=image.height;
+      if(imageAspect>frameAspect){sw=image.height*frameAspect;sx=(image.width-sw)/2;}
+      else {sh=image.width/frameAspect;sy=(image.height-sh)/2;}
+      ctx.drawImage(image,sx,sy,sw,sh,-cardWidth/2,-cardHeight/2,cardWidth,cardHeight);
+      ctx.restore();
+    }
+    function drawPhotos(t,reveal,cx,rotation,photoAlpha) {
+      if(!photos.length) return;
+      const visible=photoAlpha>.005, focused=photoFocusAlpha>.01;
+      if(!visible&&!focused) return;
+      const s=width/720;
+      if(visible) {
+        photos.slice(0,12).forEach((item,i)=>{
+          const depth=(i*.61803398875)%1;
+          const row=.24+depth*.48;
+          const radius=(8+width*.34*row)*(.76+.12*Math.sin(i*3.1));
+          const angle=i*2.39996+rotation;
+          const scatter=1-reveal;
+          const x=cx+Math.sin(angle)*radius+scatter*Math.sin(i*2.8+1)*width*.28;
+          const y=height*(.15+row*.59)+scatter*(Math.cos(i*1.4)*height*.12);
+          const size=(52+(i%3)*7)*s;
+          drawCard(item.image,x,y,size,size*1.12,photoAlpha*(.75+.25*reveal),Math.sin(i*1.7)*.17);
+        });
+      }
+      if(focused) {
+        const image=photos[Math.max(0,focusedPhotoIndex)%photos.length].image;
+        ctx.save();ctx.fillStyle=`rgba(6,9,12,${.46*photoFocusAlpha})`;ctx.fillRect(0,height*.12,width,height*.7);ctx.restore();
+        const cardWidth=width*.43;
+        drawCard(image,cx,height*.48,cardWidth,cardWidth*1.15,photoFocusAlpha);
+      }
+    }
+    function openPhotoDb() {
+      return new Promise((resolve,reject)=>{
+        const request=indexedDB.open('gesture-christmas-tree-photos',1);
+        request.onupgradeneeded=()=>request.result.createObjectStore('photos',{keyPath:'id',autoIncrement:true});
+        request.onsuccess=()=>resolve(request.result);
+        request.onerror=()=>reject(request.error);
+      });
+    }
+    async function readStoredPhotos() {
+      const items=await new Promise((resolve,reject)=>{
+        const request=photoDb.transaction('photos','readonly').objectStore('photos').getAll();
+        request.onsuccess=()=>resolve(request.result);
+        request.onerror=()=>reject(request.error);
+      });
+      const selectedId=photos[focusedPhotoIndex]?.id;
+      for(const item of photos){item.image.close?.();if(item.url)URL.revokeObjectURL(item.url);}
+      photos=[];
+      for(const item of items) {
+        try { photos.push({id:item.id,name:item.name,image:await createImageBitmap(item.blob),url:URL.createObjectURL(item.blob)}); }
+        catch(e) { console.warn('无法读取图片',item.name,e); }
+      }
+      const samePhoto=photos.findIndex(item=>item.id===selectedId);
+      focusedPhotoIndex=photos.length ? (samePhoto>=0?samePhoto:Math.max(0,Math.min(focusedPhotoIndex,photos.length-1))) : -1;
+      if(!photos.length) photoOpen=false;
+      updatePhotoCount();
+      renderPhotoManager();
+    }
+    function updatePhotoCount() {
+      photoCount.textContent=photos.length?`已保存 ${photos.length} 张 · 当前第 ${focusedPhotoIndex+1} 张`:'已保存 0 张图片';
+    }
+    function renderPhotoManager() {
+      photoList.replaceChildren();
+      if(!photos.length){
+        const empty=document.createElement('p');empty.id='photoEmpty';empty.textContent='还没有图片。关闭这里后，点「添加图片」上传。';
+        photoList.append(empty);return;
+      }
+      photos.forEach((item,index)=>{
+        const card=document.createElement('article');card.className='photoItem';
+        const image=document.createElement('img');image.src=item.url;image.alt=`第 ${index+1} 张图片`;
+        const name=document.createElement('p');name.textContent=item.name;name.title=item.name;
+        const actions=document.createElement('div');actions.className='photoActions';
+        const select=document.createElement('button');select.type='button';select.textContent=index===focusedPhotoIndex?'当前照片':'设为当前';
+        select.disabled=index===focusedPhotoIndex;
+        select.addEventListener('click',()=>{focusedPhotoIndex=index;updatePhotoCount();renderPhotoManager();updateStatus(`已选中第 ${index+1} 张照片 · 捏住查看`);});
+        const remove=document.createElement('button');remove.type='button';remove.className='danger';remove.textContent='删除';
+        remove.setAttribute('aria-label',`删除第 ${index+1} 张图片：${item.name}`);
+        remove.addEventListener('click',()=>deletePhoto(item,remove));
+        actions.append(select,remove);card.append(image,name,actions);photoList.append(card);
+      });
+    }
+    function deleteStoredPhoto(id) {
+      return new Promise((resolve,reject)=>{
+        const tx=photoDb.transaction('photos','readwrite');
+        tx.objectStore('photos').delete(id);
+        tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
+      });
+    }
+    async function deletePhoto(item,button) {
+      if(!photoDb){updateStatus('图片存储不可用');return;}
+      if(!window.confirm(`确定删除「${item.name}」吗？删除后无法恢复。`))return;
+      button.disabled=true;
+      try {
+        await deleteStoredPhoto(item.id);
+        await readStoredPhotos();
+        updateStatus(`已删除「${item.name}」`);
+      } catch(e) {updateStatus('删除图片失败：'+e.message);button.disabled=false;}
+    }
+    function savePhoto(blob,name) {
+      return new Promise((resolve,reject)=>{
+        const tx=photoDb.transaction('photos','readwrite');
+        tx.objectStore('photos').add({blob,name,createdAt:Date.now()});
+        tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
+      });
+    }
+    async function shrinkPhoto(file) {
+      const image=await createImageBitmap(file);
+      const scale=Math.min(1,1200/Math.max(image.width,image.height));
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(image.width*scale));
+      canvas.height=Math.max(1,Math.round(image.height*scale));
+      canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+      image.close?.();
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.86));
+      if(!blob)throw new Error('无法处理图片');
+      return blob;
+    }
+    async function importPhotos(files) {
+      if(!photoDb){updateStatus('浏览器未开放图片存储，请使用普通 Chrome 窗口');return;}
+      let added=0;
+      try {
+        for(const file of files) {
+          if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>12*1024*1024) continue;
+          if(photos.length+added>=30) break;
+          await savePhoto(await shrinkPhoto(file),file.name); added++;
+        }
+        await readStoredPhotos();
+        if(added){
+          photoReveal.onPhotosAdded();
+          photoOpen=false;
+          updateStatus(`已保存 ${added} 张图片 · 圣诞树聚到还剩 1/3 后出现`);
+        } else {
+          updateStatus('未添加图片：请选 JPG、PNG 或 WebP（每张不超过 12 MB）');
+        }
+      } catch(e) {updateStatus('保存图片失败：'+e.message);}
+      photoInput.value='';
+    }
+    function runRotation(direction) {
+      demo=false;
+      if(direction==='clockwise') {
+        targetAssembly=1;
+        if(photoReveal.shouldRestartAssembly(easedAssembly)) {
+          easedAssembly=0;
+          photoReveal.resetAssembly();
+        }
+        updateStatus('顺时针 · 光环从下往上聚成树'+(photos.length?'，剩 1/3 时照片出现':' · 添加图片后剩 1/3 时出现'));
+      } else {
+        targetAssembly=0;
+        updateStatus('逆时针 · 从树顶往下逐圈消散');
+      }
+    }
+    function nextPhoto() {
+      if(!photos.length || !photoReveal.revealed)return;
+      focusedPhotoIndex=(focusedPhotoIndex+1)%photos.length;
+      updatePhotoCount();
+      if(!photoManager.hidden)renderPhotoManager();
+      updateStatus(`已切换到第 ${focusedPhotoIndex+1} 张照片 · 保持捏住可继续查看`);
+    }
+    function showPhoto() {
+      if(!photos.length){updateStatus('先点「添加图片」，再捏住打开');return;}
+      if(!photoReveal.revealed){updateStatus('圣诞树聚到还剩 1/3、照片出现后再捏住查看');return;}
+      if(focusedPhotoIndex<0) focusedPhotoIndex=0;
+      photoOpen=true;
+      updateStatus(`已打开第 ${focusedPhotoIndex+1} 张照片 · 松开关闭`);
+    }
+    function hidePhoto() {
+      pinchController.reset();
+      if(!photoOpen) return;
+      photoOpen=false;
+      updateStatus('照片已关闭 · 捏住打开，向左滑切换');
+    }
+    function draw(t) {
+      const s=width/720, cx=width*.5, floor=height*.745;
+      const rotation=(t-startedAt)*Math.PI*2/32000;
+      const cosRotation=Math.cos(rotation), sinRotation=Math.sin(rotation);
+      const auto = demo ? clamp((t-startedAt)/3800) : targetAssembly;
+      const targetOpen=demo?auto:targetAssembly;
+      const dt=lastDrawAt?Math.min(.06,(t-lastDrawAt)/1000):0;
+      lastDrawAt=t;
+      photoFocusAlpha+=(Number(photoOpen)-photoFocusAlpha)*Math.min(1,dt*18);
+      const step=dt*.30;
+      easedAssembly+=clamp(targetOpen-easedAssembly,-step,step);
+      easedHandX+=(handX-easedHandX)*.04;
+      const reveal=clamp(easedAssembly);
+      const photoState=photoReveal.update(reveal,demo?1:targetAssembly);
+      if(!photoReveal.revealed && photoOpen) hidePhoto();
+      if(photoState.justRevealed && photos.length) {
+        updateStatus('圣诞树聚到还剩 1/3，照片已出现 · 捏住放大，左滑切换');
+      }
+      ctx.clearRect(0,0,width,height);
+      ctx.fillStyle='#121419';ctx.fillRect(0,0,width,height);
+      for(const p of stars){const a=p.a*(.7+.3*Math.sin(t*.0015+p.p));ctx.fillStyle=`rgba(230,233,222,${a})`;ctx.fillRect(p.x,p.y,p.r,p.r);}
+      for(const p of flakes){p.y+=p.v;if(p.y>height)p.y=-3;const a=.1+.16*(.5+.5*Math.sin(t*.001+p.p));ctx.fillStyle=`rgba(231,228,213,${a})`;ctx.fillRect(p.x+Math.sin(t*.0005+p.p)*3*s,p.y,p.r,p.r);}
+      floorLights(t,floor,rotation);
+      for(let i=0;i<7;i++) ring(cx,floor+i*height*.036,width*(.19+i*.087),height*(.026+i*.01),rotation+i*.27,.95-i*.075);
+      if(reveal>.22){ctx.globalAlpha=clamp((reveal-.22)/.15);ctx.fillStyle='#2d241c';ctx.fillRect(cx-15*s,floor-35*s,30*s,58*s);ctx.globalAlpha=1;}
+      const glowField=ctx.createRadialGradient(cx,height*.48,10,cx,height*.48,width*.45);
+      glowField.addColorStop(0,`rgba(21,102,57,${.12*reveal})`);glowField.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=glowField;ctx.fillRect(0,0,width,height);
+      for(const p of dots) {
+        const progress=clamp((reveal-(1-p.t)*.92)/.08);
+        if(p.seed>.14+progress*.86) continue;
+        const rotatedX=p.x*cosRotation-p.z*sinRotation;
+        const rotatedZ=p.x*sinRotation+p.z*cosRotation;
+        const depthLight=.78+.22*clamp((rotatedZ/p.radius+1)/2);
+        const treeX=cx+rotatedX;
+        const x=p.sx+(treeX-p.sx)*progress+(1-progress)*Math.sin(p.phase+t*.0015)*8*s+(easedHandX-.5)*17*s*progress;
+        const y=p.sy+(p.y-p.sy)*progress;
+        const flicker=.84+.16*Math.sin(t*.003+p.phase);
+        const alpha=(.2+.8*progress)*(.83+.17*p.lit)*(.88+.12*flicker)*depthLight*p.tierLight;
+        if(p.ribbon) ctx.fillStyle=`hsla(${(p.hue+t*.018)%360},100%,72%,${alpha})`;
+        else if(p.ornament) ctx.fillStyle=`rgba(255,${Math.floor(70+60*flicker)},85,${alpha})`;
+        else ctx.fillStyle=`rgba(${Math.floor(48+70*p.lit)},${Math.floor(165+80*p.lit)},${Math.floor(73+68*p.lit)},${alpha})`;
+        const size=Math.max(1.3,p.size*(p.ribbon?1.5:p.ornament?1.8:1.05));
+        ctx.fillRect(x,y,size,Math.max(1.1,s*1.8));
+        if((p.ribbon||p.ornament)&&p.lit>.7&&Math.sin(t*.002+p.phase)>.85){ctx.globalAlpha=alpha*.16;ctx.fillRect(x-2*s,y-2*s,size+4*s,size+4*s);ctx.globalAlpha=1;}
+      }
+      for(const p of branchRings){
+        const progress=clamp((reveal-(1-p.t)*.92)/.08);
+        if(progress<.1)continue;
+        const rotatedX=p.x*cosRotation-p.z*sinRotation;
+        const rotatedZ=p.x*sinRotation+p.z*cosRotation;
+        const front=.25+.75*clamp((rotatedZ/p.radius+1)/2);
+        ctx.fillStyle=`rgba(151,246,169,${.55*progress*p.light*front})`;
+        ctx.fillRect(cx+rotatedX,p.y+rotatedZ*.075,Math.max(1.2,2*s),Math.max(1,1.8*s));
+      }
+      drawGarland(t,reveal,rotation);
+      const topY=height*.14+Math.sin(t*.001)*2*s;
+      if(reveal>.87){ctx.globalAlpha=clamp((reveal-.87)/.13);star(cx,topY,t);ctx.globalAlpha=1;}
+      if(Math.abs(targetOpen-reveal)>.025 || (demo && reveal<.98)) {
+        const level=1-reveal;
+        const sweepY=height*(.145+level*.59);
+        const radius=treeRadius(level,s);
+        ctx.save();ctx.strokeStyle='rgba(211,255,217,.8)';ctx.lineWidth=Math.max(1,3*s);ctx.shadowColor='#80f5af';ctx.shadowBlur=18*s;
+        ctx.beginPath();ctx.ellipse(cx,sweepY,Math.max(15*s,radius*1.04),Math.max(3*s,9*s),0,0,Math.PI*2);ctx.stroke();ctx.restore();
+      }
+      gift(cx-width*.29,floor+height*.09,'#215d63',.95);
+      gift(cx+width*.31,floor+height*.085,'#7b273f',1.06);
+      gift(cx+width*.41,floor+height*.13,'#213d77',.82);
+      if(reveal>.25) deer(t,clamp((reveal-.25)/.35));
+      drawPhotos(t,reveal,cx,rotation,photoState.alpha);
+      requestAnimationFrame(draw);
+    }
+    function updateStatus(value) { status.textContent=value; }
+    function drawHands(results) {
+      landmarkCtx.clearRect(0,0,topWidth,topHeight);
+      if(!results.multiHandLandmarks?.length) return;
+      const s=topWidth/720;
+      landmarkCtx.save();landmarkCtx.strokeStyle='rgba(255,248,236,.88)';landmarkCtx.fillStyle='#fff9ee';landmarkCtx.lineWidth=2*s;landmarkCtx.shadowColor='#fff';landmarkCtx.shadowBlur=8*s;
+      for(const points of results.multiHandLandmarks){
+        for(const [a,b] of bones){landmarkCtx.beginPath();landmarkCtx.moveTo(points[a].x*topWidth,points[a].y*topHeight);landmarkCtx.lineTo(points[b].x*topWidth,points[b].y*topHeight);landmarkCtx.stroke();}
+        for(const p of points){landmarkCtx.beginPath();landmarkCtx.arc(p.x*topWidth,p.y*topHeight,3.2*s,0,7);landmarkCtx.fill();}
+      }
+      landmarkCtx.restore();
+    }
+    function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+    function processHands(results, now=performance.now()) {
+      drawHands(results);
+      const found=results.multiHandLandmarks||[];
+      if(!found.length){
+        if(now-lastHandsAt>350){pinchAmount=0;hidePhoto();pinchController.reset();circleTracker.reset();}
+        return;
+      }
+      lastHandsAt=now;
+      const p=found[0];
+      const palm=Math.max(distance(p[0],p[9]),.04);
+      handX=1-p[9].x;
+      const pinchX=1-((p[4].x+p[8].x)*.35+p[9].x*.30);
+      pinchAmount=1-clamp(distance(p[4],p[8])/(palm*.52));
+      const pinchState=pinchController.update({pinchAmount,x:pinchX,now,isOpen:photoOpen});
+      if(pinchState.action==='open') showPhoto();
+      else if(pinchState.action==='slide') nextPhoto();
+      else if(pinchState.action==='close') hidePhoto();
+      if(pinchState.allowCircle){
+        const result=circleTracker.add(1-p[8].x,p[8].y,now);
+        if(result) runRotation(result.direction);
+      } else {
+        circleTracker.reset();
+      }
+    }
+    async function track() {
+      if(!stream)return;
+      if(!sending && webcam.readyState>=2 && webcam.currentTime!==videoFrame){
+        sending=true; videoFrame=webcam.currentTime;
+        try{await hands.send({image:webcam});}catch(e){updateStatus('手势识别暂不可用：'+e.message);}finally{sending=false;}
+      }
+      if(performance.now()-lastHandsAt>700){pinchAmount=0;hidePhoto();pinchController.reset();circleTracker.reset();landmarkCtx.clearRect(0,0,topWidth,topHeight);}
+      requestAnimationFrame(track);
+    }
+    async function startCamera() {
+      if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;webcam.srcObject=null;webcam.style.display='none';prompt.style.display='block';landmarkCtx.clearRect(0,0,topWidth,topHeight);cameraButton.textContent='开启摄像头';pinchAmount=0;hidePhoto();pinchController.reset();circleTracker.reset();updateStatus('摄像头已关闭 · 点击 ↻ 或 ↺ 可试聚散');return;}
+      cameraButton.disabled=true;updateStatus('正在启动摄像头与手势识别…');
+      try {
+        if(!window.Hands) throw new Error('手势识别脚本未加载，请检查网络');
+        hands ??= new Hands({locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.55,minTrackingConfidence:.55});
+        hands.onResults(processHands);
+        stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
+        webcam.srcObject=stream;await webcam.play();webcam.style.display='block';prompt.style.display='none';
+        demo=false;cameraButton.textContent='关闭摄像头';
+        targetAssembly=1;updateStatus('摄像头已开启 · 食指画圈控制树，捏住打开照片并向左滑切换');track();
+      } catch(e) { if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;} updateStatus('摄像头启动失败：'+(e.name==='NotAllowedError'?'请在浏览器中允许摄像头':e.message)); }
+      cameraButton.disabled=false;
+    }
+    cameraButton.addEventListener('click',startCamera);
+    document.getElementById('demoClockwise').addEventListener('click',()=>runRotation('clockwise'));
+    document.getElementById('demoCounterclockwise').addEventListener('click',()=>runRotation('counterclockwise'));
+    uploadButton.addEventListener('click',()=>photoInput.click());
+    manageButton.addEventListener('click',()=>{renderPhotoManager();photoManager.hidden=false;closeManagerButton.focus();});
+    closeManagerButton.addEventListener('click',()=>{photoManager.hidden=true;manageButton.focus();});
+    window.addEventListener('keydown',event=>{if(event.key==='Escape'&&!photoManager.hidden){photoManager.hidden=true;manageButton.focus();}});
+    photoInput.addEventListener('change',()=>importPhotos(Array.from(photoInput.files||[])));
+    window.addEventListener('resize',resize);
+    openPhotoDb().then(async db=>{photoDb=db;await readStoredPhotos();}).catch(e=>{photoCount.textContent='图片存储不可用';console.warn('图片存储不可用',e);});
+    resize();requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
